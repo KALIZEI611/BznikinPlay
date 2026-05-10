@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -147,8 +148,6 @@ func main() {
             return
         }
 
-        log.Printf("Registration attempt: %s, %s", req.Username, req.Email)
-
         // Проверяем, существует ли пользователь
         for _, u := range users {
             if u.Email == req.Email {
@@ -174,8 +173,6 @@ func main() {
         users = append(users, user)
         nextUserID++
 
-        log.Printf("User created successfully with ID: %d", user.ID)
-
         // Генерируем токен
         token, _ := generateToken(user.ID, user.Username, user.Email)
 
@@ -200,8 +197,6 @@ func main() {
             return
         }
 
-        log.Printf("Login attempt: %s", req.Email)
-
         // Ищем пользователя
         var foundUser *User
         for i, u := range users {
@@ -212,7 +207,6 @@ func main() {
         }
 
         if foundUser == nil {
-            log.Printf("User not found: %s", req.Email)
             c.JSON(401, gin.H{"error": "Invalid email or password"})
             return
         }
@@ -220,12 +214,9 @@ func main() {
         // Проверяем пароль
         err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.Password))
         if err != nil {
-            log.Printf("Invalid password for user: %s", req.Email)
             c.JSON(401, gin.H{"error": "Invalid email or password"})
             return
         }
-
-        log.Printf("User logged in: %s (ID: %d)", foundUser.Email, foundUser.ID)
 
         // Генерируем токен
         token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
@@ -239,7 +230,7 @@ func main() {
         })
     })
 
-    // ========== ПРОФИЛЬ ==========
+    // ========== ПРОФИЛЬ (GET) ==========
     r.GET("/api/user/profile", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
@@ -257,12 +248,90 @@ func main() {
         }
 
         c.JSON(200, gin.H{
-            "id": foundUser.ID, "username": foundUser.Username, "email": foundUser.Email,
+            "id": foundUser.ID, 
+            "username": foundUser.Username, 
+            "email": foundUser.Email,
             "created_at": time.Now().AddDate(-1, 0, 0),
         })
     })
 
-    // ========== АРЕНДА ==========
+    // ========== ПРОФИЛЬ (UPDATE) ==========
+    r.PUT("/api/user/profile", authMiddleware(), func(c *gin.Context) {
+        userID := c.GetInt("user_id")
+        
+        var req struct {
+            Username        string `json:"username"`
+            Email           string `json:"email"`
+            CurrentPassword string `json:"current_password"`
+            NewPassword     string `json:"new_password"`
+        }
+        
+        if err := c.ShouldBindJSON(&req); err != nil {
+            c.JSON(400, gin.H{"error": "Invalid request data"})
+            return
+        }
+
+        // Находим пользователя
+        var foundUser *User
+        var userIndex int
+        for i, u := range users {
+            if u.ID == userID {
+                foundUser = &users[i]
+                userIndex = i
+                break
+            }
+        }
+
+        if foundUser == nil {
+            c.JSON(404, gin.H{"error": "User not found"})
+            return
+        }
+
+        // Проверяем текущий пароль
+        err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.CurrentPassword))
+        if err != nil {
+            c.JSON(401, gin.H{"error": "Current password is incorrect"})
+            return
+        }
+
+        // Обновляем данные
+        if req.Username != "" {
+            foundUser.Username = req.Username
+        }
+        if req.Email != "" {
+            // Проверяем уникальность email
+            for i, u := range users {
+                if u.Email == req.Email && i != userIndex {
+                    c.JSON(400, gin.H{"error": "Email already in use"})
+                    return
+                }
+            }
+            foundUser.Email = req.Email
+        }
+        if req.NewPassword != "" {
+            if len(req.NewPassword) < 6 {
+                c.JSON(400, gin.H{"error": "Password must be at least 6 characters"})
+                return
+            }
+            hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+            foundUser.Password = string(hashedPassword)
+        }
+
+        // Генерируем новый токен
+        token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
+
+        c.JSON(200, gin.H{
+            "message": "Profile updated successfully",
+            "token":   token,
+            "user": gin.H{
+                "id": foundUser.ID, 
+                "username": foundUser.Username, 
+                "email": foundUser.Email,
+            },
+        })
+    })
+
+    // ========== АРЕНДА (CREATE) ==========
     r.POST("/api/rentals", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
@@ -278,8 +347,6 @@ func main() {
             c.JSON(400, gin.H{"error": "Invalid request"})
             return
         }
-
-        log.Printf("Rental created for user %d, console %d", userID, req.ConsoleID)
 
         // Цены консолей
         prices := map[int]float64{1: 800, 2: 800, 3: 500, 4: 800, 5: 800, 6: 500}
@@ -338,6 +405,7 @@ func main() {
         })
     })
 
+    // ========== МОИ АРЕНДЫ ==========
     r.GET("/api/my-rentals", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
@@ -358,7 +426,45 @@ func main() {
         c.JSON(200, userRentals)
     })
 
+    // ========== ВОЗВРАТ КОНСОЛИ ==========
     r.PUT("/api/rentals/:id/return", authMiddleware(), func(c *gin.Context) {
+        rentalID, err := strconv.Atoi(c.Param("id"))
+        if err != nil {
+            c.JSON(400, gin.H{"error": "Invalid rental ID"})
+            return
+        }
+
+        userID := c.GetInt("user_id")
+        
+        // Находим аренду
+        var rentalIndex = -1
+        for i, r := range rentals {
+            if r["id"] == rentalID {
+                rentalIndex = i
+                break
+            }
+        }
+
+        if rentalIndex == -1 {
+            c.JSON(404, gin.H{"error": "Rental not found"})
+            return
+        }
+
+        // Проверяем, что аренда принадлежит пользователю
+        if rentals[rentalIndex]["user_id"] != userID {
+            c.JSON(403, gin.H{"error": "You can only return your own rentals"})
+            return
+        }
+
+        // Проверяем, что аренда активна
+        if rentals[rentalIndex]["status"] != "active" {
+            c.JSON(400, gin.H{"error": "This rental is already returned"})
+            return
+        }
+
+        // Обновляем статус
+        rentals[rentalIndex]["status"] = "returned"
+
         c.JSON(200, gin.H{"message": "Console returned successfully"})
     })
 
@@ -369,5 +475,6 @@ func main() {
 
     log.Printf("✅ Server starting on port %s", port)
     log.Printf("📊 Users count: %d", len(users))
+    log.Printf("📊 Rentals count: %d", len(rentals))
     log.Fatal(r.Run(":" + port))
 }
