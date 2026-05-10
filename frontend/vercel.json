@@ -8,8 +8,5 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "env": {
-    "VITE_API_URL": "http://postgres-production-096b.up.railway.app/api"
-  }
+  "installCommand": "npm install"
 }
