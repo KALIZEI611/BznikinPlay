@@ -48,7 +48,7 @@ func init() {
         Password: string(hashedPassword),
     })
     nextUserID++
-    log.Println("✅ Test user created: test@example.com / 123456")
+    log.Println("✅ Тестовый пользователь создан: test@example.com / 123456")
 }
 
 func generateToken(userID int, username, email string) (string, error) {
@@ -69,14 +69,14 @@ func authMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {
         authHeader := c.GetHeader("Authorization")
         if authHeader == "" {
-            c.JSON(401, gin.H{"error": "No authorization header"})
+            c.JSON(401, gin.H{"error": "❌ Ошибка авторизации: токен не предоставлен"})
             c.Abort()
             return
         }
 
         parts := strings.SplitN(authHeader, " ", 2)
         if len(parts) != 2 || parts[0] != "Bearer" {
-            c.JSON(401, gin.H{"error": "Invalid authorization header format"})
+            c.JSON(401, gin.H{"error": "❌ Ошибка авторизации: неверный формат токена"})
             c.Abort()
             return
         }
@@ -89,7 +89,7 @@ func authMiddleware() gin.HandlerFunc {
         })
 
         if err != nil || !token.Valid {
-            c.JSON(401, gin.H{"error": "Invalid or expired token"})
+            c.JSON(401, gin.H{"error": "❌ Ошибка авторизации: токен истёк или недействителен"})
             c.Abort()
             return
         }
@@ -104,7 +104,7 @@ func authMiddleware() gin.HandlerFunc {
 func main() {
     r := gin.Default()
     
-    log.Println("🚀 Starting ConsoleRent backend...")
+    log.Println("🚀 Запуск ConsoleRent backend...")
 
     // CORS
     r.Use(cors.New(cors.Config{
@@ -144,14 +144,35 @@ func main() {
         }
         
         if err := c.ShouldBindJSON(&req); err != nil {
-            c.JSON(400, gin.H{"error": "Invalid request"})
+            c.JSON(400, gin.H{"error": "❌ Ошибка: неверный формат данных"})
+            return
+        }
+
+        // Проверка на пустые поля
+        if req.Username == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: имя пользователя не может быть пустым"})
+            return
+        }
+        
+        if req.Email == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: email не может быть пустым"})
+            return
+        }
+        
+        if req.Password == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: пароль не может быть пустым"})
+            return
+        }
+        
+        if len(req.Password) < 6 {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: пароль должен содержать минимум 6 символов"})
             return
         }
 
         // Проверяем, существует ли пользователь
         for _, u := range users {
             if u.Email == req.Email {
-                c.JSON(400, gin.H{"error": "User already exists"})
+                c.JSON(400, gin.H{"error": "❌ Ошибка: пользователь с таким email уже существует"})
                 return
             }
         }
@@ -159,7 +180,7 @@ func main() {
         // Хешируем пароль
         hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
         if err != nil {
-            c.JSON(500, gin.H{"error": "Failed to hash password"})
+            c.JSON(500, gin.H{"error": "❌ Ошибка сервера: не удалось зашифровать пароль"})
             return
         }
 
@@ -177,10 +198,12 @@ func main() {
         token, _ := generateToken(user.ID, user.Username, user.Email)
 
         c.JSON(201, gin.H{
-            "message": "User created successfully",
+            "message": "✅ Регистрация прошла успешно! Добро пожаловать!",
             "token":   token,
             "user": gin.H{
-                "id": user.ID, "username": user.Username, "email": user.Email,
+                "id": user.ID, 
+                "username": user.Username, 
+                "email": user.Email,
             },
         })
     })
@@ -193,7 +216,18 @@ func main() {
         }
         
         if err := c.ShouldBindJSON(&req); err != nil {
-            c.JSON(400, gin.H{"error": "Invalid request"})
+            c.JSON(400, gin.H{"error": "❌ Ошибка: неверный формат данных"})
+            return
+        }
+
+        // Проверка на пустые поля
+        if req.Email == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: введите email"})
+            return
+        }
+        
+        if req.Password == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: введите пароль"})
             return
         }
 
@@ -207,14 +241,14 @@ func main() {
         }
 
         if foundUser == nil {
-            c.JSON(401, gin.H{"error": "Invalid email or password"})
+            c.JSON(401, gin.H{"error": "❌ Ошибка: пользователь с таким email не найден"})
             return
         }
 
         // Проверяем пароль
         err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.Password))
         if err != nil {
-            c.JSON(401, gin.H{"error": "Invalid email or password"})
+            c.JSON(401, gin.H{"error": "❌ Ошибка: неверный пароль"})
             return
         }
 
@@ -222,10 +256,12 @@ func main() {
         token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
 
         c.JSON(200, gin.H{
-            "message": "Login successful",
+            "message": "✅ Вход выполнен успешно! Добро пожаловать, " + foundUser.Username + "!",
             "token":   token,
             "user": gin.H{
-                "id": foundUser.ID, "username": foundUser.Username, "email": foundUser.Email,
+                "id": foundUser.ID, 
+                "username": foundUser.Username, 
+                "email": foundUser.Email,
             },
         })
     })
@@ -243,7 +279,7 @@ func main() {
         }
 
         if foundUser == nil {
-            c.JSON(404, gin.H{"error": "User not found"})
+            c.JSON(404, gin.H{"error": "❌ Ошибка: пользователь не найден"})
             return
         }
 
@@ -267,7 +303,7 @@ func main() {
         }
         
         if err := c.ShouldBindJSON(&req); err != nil {
-            c.JSON(400, gin.H{"error": "Invalid request data"})
+            c.JSON(400, gin.H{"error": "❌ Ошибка: неверный формат данных"})
             return
         }
 
@@ -283,45 +319,57 @@ func main() {
         }
 
         if foundUser == nil {
-            c.JSON(404, gin.H{"error": "User not found"})
+            c.JSON(404, gin.H{"error": "❌ Ошибка: пользователь не найден"})
             return
         }
 
         // Проверяем текущий пароль
         err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.CurrentPassword))
         if err != nil {
-            c.JSON(401, gin.H{"error": "Current password is incorrect"})
+            c.JSON(401, gin.H{"error": "❌ Ошибка: текущий пароль введён неверно"})
             return
         }
 
+        changes := []string{}
+
         // Обновляем данные
-        if req.Username != "" {
+        if req.Username != "" && req.Username != foundUser.Username {
             foundUser.Username = req.Username
+            changes = append(changes, "имя пользователя")
         }
-        if req.Email != "" {
+        
+        if req.Email != "" && req.Email != foundUser.Email {
             // Проверяем уникальность email
             for i, u := range users {
                 if u.Email == req.Email && i != userIndex {
-                    c.JSON(400, gin.H{"error": "Email already in use"})
+                    c.JSON(400, gin.H{"error": "❌ Ошибка: этот email уже используется другим пользователем"})
                     return
                 }
             }
             foundUser.Email = req.Email
+            changes = append(changes, "email")
         }
+        
         if req.NewPassword != "" {
             if len(req.NewPassword) < 6 {
-                c.JSON(400, gin.H{"error": "Password must be at least 6 characters"})
+                c.JSON(400, gin.H{"error": "❌ Ошибка: новый пароль должен содержать минимум 6 символов"})
                 return
             }
             hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
             foundUser.Password = string(hashedPassword)
+            changes = append(changes, "пароль")
+        }
+
+        message := "✅ Профиль успешно обновлён"
+        if len(changes) > 0 {
+            message += " (изменено: " + strings.Join(changes, ", ") + ")"
         }
 
         // Генерируем новый токен
         token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
 
         c.JSON(200, gin.H{
-            "message": "Profile updated successfully",
+            "message": message,
             "token":   token,
             "user": gin.H{
                 "id": foundUser.ID, 
@@ -344,7 +392,18 @@ func main() {
         }
         
         if err := c.ShouldBindJSON(&req); err != nil {
-            c.JSON(400, gin.H{"error": "Invalid request"})
+            c.JSON(400, gin.H{"error": "❌ Ошибка: неверный формат данных"})
+            return
+        }
+
+        // Проверка обязательных полей
+        if req.DeliveryAddress == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: укажите адрес доставки"})
+            return
+        }
+        
+        if req.Phone == "" {
+            c.JSON(400, gin.H{"error": "❌ Ошибка: укажите номер телефона"})
             return
         }
 
@@ -398,10 +457,22 @@ func main() {
         rentals = append(rentals, rental)
         nextRentalID++
 
+        // Рассчитываем количество дней
+        days := 1
+        if req.StartDate != "" && req.EndDate != "" {
+            start, _ := time.Parse(time.RFC3339, req.StartDate)
+            end, _ := time.Parse(time.RFC3339, req.EndDate)
+            days = int(end.Sub(start).Hours()/24) + 1
+            if days < 1 {
+                days = 1
+            }
+        }
+        totalPrice := price * float64(days)
+
         c.JSON(201, gin.H{
             "rental_id":   rental["id"],
-            "total_price": price,
-            "message":     "Rental created successfully",
+            "total_price": totalPrice,
+            "message":     "✅ Аренда успешно оформлена! Консоль будет доставлена по указанному адресу.",
         })
     })
 
@@ -412,6 +483,15 @@ func main() {
         var userRentals []gin.H
         for _, r := range rentals {
             if r["user_id"] == userID {
+                // Добавляем русский текст статуса
+                status := r["status"].(string)
+                statusText := "Активна"
+                if status == "returned" {
+                    statusText = "Возвращена"
+                } else if status == "cancelled" {
+                    statusText = "Отменена"
+                }
+                
                 userRentals = append(userRentals, gin.H{
                     "id":               r["id"],
                     "console":          r["console"],
@@ -419,7 +499,8 @@ func main() {
                     "end_date":         r["end_date"],
                     "total_price":      r["total_price"],
                     "delivery_address": r["delivery_address"],
-                    "status":           r["status"],
+                    "status":           status,
+                    "status_text":      statusText,
                 })
             }
         }
@@ -430,7 +511,7 @@ func main() {
     r.PUT("/api/rentals/:id/return", authMiddleware(), func(c *gin.Context) {
         rentalID, err := strconv.Atoi(c.Param("id"))
         if err != nil {
-            c.JSON(400, gin.H{"error": "Invalid rental ID"})
+            c.JSON(400, gin.H{"error": "❌ Ошибка: неверный идентификатор аренды"})
             return
         }
 
@@ -446,26 +527,26 @@ func main() {
         }
 
         if rentalIndex == -1 {
-            c.JSON(404, gin.H{"error": "Rental not found"})
+            c.JSON(404, gin.H{"error": "❌ Ошибка: аренда не найдена"})
             return
         }
 
         // Проверяем, что аренда принадлежит пользователю
         if rentals[rentalIndex]["user_id"] != userID {
-            c.JSON(403, gin.H{"error": "You can only return your own rentals"})
+            c.JSON(403, gin.H{"error": "❌ Ошибка: вы можете вернуть только свою аренду"})
             return
         }
 
         // Проверяем, что аренда активна
         if rentals[rentalIndex]["status"] != "active" {
-            c.JSON(400, gin.H{"error": "This rental is already returned"})
+            c.JSON(400, gin.H{"error": "❌ Ошибка: эта аренда уже возвращена"})
             return
         }
 
         // Обновляем статус
         rentals[rentalIndex]["status"] = "returned"
 
-        c.JSON(200, gin.H{"message": "Console returned successfully"})
+        c.JSON(200, gin.H{"message": "✅ Консоль успешно возвращена! Спасибо за аренду!"})
     })
 
     port := os.Getenv("PORT")
@@ -473,8 +554,8 @@ func main() {
         port = "8080"
     }
 
-    log.Printf("✅ Server starting on port %s", port)
-    log.Printf("📊 Users count: %d", len(users))
-    log.Printf("📊 Rentals count: %d", len(rentals))
+    log.Printf("✅ Сервер запущен на порту %s", port)
+    log.Printf("📊 Пользователей: %d", len(users))
+    log.Printf("📊 Активных аренд: %d", len(rentals))
     log.Fatal(r.Run(":" + port))
 }
