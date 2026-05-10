@@ -248,8 +248,10 @@ export default {
     };
 
     const handleImageError = (event) => {
-      event.target.src =
-        "https://via.placeholder.com/400x300?text=Console+Image";
+      // Используем эмодзи вместо внешнего placeholder
+      event.target.style.display = "none";
+      event.target.parentElement.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#f0f7ff;font-size:3rem;">🎮</div>';
     };
 
     const goToCheckout = (console) => {
