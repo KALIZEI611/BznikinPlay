@@ -1,30 +1,49 @@
 package database
 
 import (
-    "database/sql"
-    "fmt"
-    "log"
-    "os"
+	"database/sql"
+	"fmt"
+	"log"
+	"os"
 
-    _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
 )
 
 var DB *sql.DB
 
 func InitDB() error {
-    // Используем стандартные переменные Railway
     host := os.Getenv("PGHOST")
     port := os.Getenv("PGPORT")
     user := os.Getenv("PGUSER")
     password := os.Getenv("PGPASSWORD")
     dbname := os.Getenv("PGDATABASE")
     
-    // Логируем для отладки
-    log.Printf("Connecting: host=%s port=%s user=%s dbname=%s", host, port, user, dbname)
+    log.Printf("📊 Connecting: host=%s port=%s user=%s dbname=%s", host, port, user, dbname)
     
-    if host == "" || port == "" || user == "" || password == "" || dbname == "" {
-        return fmt.Errorf("missing required database environment variables: PGHOST=%s, PGPORT=%s, PGUSER=%s, PGPASSWORD=%s, PGDATABASE=%s", 
-            host, port, user, password, dbname)
+    if host == "" {
+        host = os.Getenv("DB_HOST")
+    }
+    if port == "" {
+        port = os.Getenv("DB_PORT")
+        if port == "" {
+            port = "5432"
+        }
+    }
+    if user == "" {
+        user = os.Getenv("DB_USER")
+    }
+    if password == "" {
+        password = os.Getenv("DB_PASSWORD")
+    }
+    if dbname == "" {
+        dbname = os.Getenv("DB_NAME")
+        if dbname == "" {
+            dbname = "railway"
+        }
+    }
+    
+    if host == "" {
+        return fmt.Errorf("❌ Missing database host")
     }
     
     connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
@@ -36,12 +55,15 @@ func InitDB() error {
         return fmt.Errorf("error opening database: %v", err)
     }
     
+    DB.SetMaxOpenConns(25)
+    DB.SetMaxIdleConns(5)
+    
     err = DB.Ping()
     if err != nil {
         return fmt.Errorf("database ping failed: %v", err)
     }
     
-    log.Println("Database connected successfully!")
+    log.Println("✅ Database connected successfully!")
     createTables()
     insertSampleData()
     return nil
@@ -79,43 +101,45 @@ func createTables() {
     }
     
     for _, query := range queries {
-        _, err := DB.Exec(query)
-        if err != nil {
-            log.Printf("Error creating table: %v", err)
+        if _, err := DB.Exec(query); err != nil {
+            log.Printf("⚠️ Error creating table: %v", err)
         }
     }
-    log.Println("Tables verified/created successfully")
+    log.Println("✅ Tables ready")
 }
 
 func insertSampleData() {
     var count int
     DB.QueryRow("SELECT COUNT(*) FROM consoles").Scan(&count)
     
-    if count == 0 {
-        consoles := []struct {
-            typeVal     string
-            model       string
-            pricePerDay float64
-            description string
-            imageURL    string
-        }{
-            {"PS5", "PlayStation 5 Standard", 800, "Полная комплектация: 2 контроллера DualSense, зарядная станция, подписка PlayStation Plus на 1 месяц", "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"},
-            {"PS5", "PlayStation 5 Digital", 800, "Цифровая версия без дисковода, 1 контроллер DualSense, 825 GB SSD, подписка PlayStation Plus Essential", "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"},
-            {"PS4", "PlayStation 4 Slim", 500, "500 GB HDD, 1 контроллер DualShock 4, компактный дизайн, подборка лучших игр", "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"},
-            {"XBOX", "Xbox Series X", 800, "1 ТБ SSD, 4K Gaming, контроллер Xbox Wireless, Game Pass Ultimate на 1 месяц", "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"},
-            {"XBOX", "Xbox Series S", 800, "512 ГБ SSD, цифровая версия, компактный дизайн, Game Pass Ultimate на 1 месяц", "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"},
-            {"XBOX", "Xbox One X", 500, "1 ТБ HDD, 4K Gaming, поддержка HDR, контроллер Xbox Wireless", "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"},
-        }
-        
-        for _, c := range consoles {
-            _, err := DB.Exec(
-                "INSERT INTO consoles (type, model, price_per_day, description, image_url) VALUES ($1, $2, $3, $4, $5)",
-                c.typeVal, c.model, c.pricePerDay, c.description, c.imageURL,
-            )
-            if err != nil {
-                log.Println("Error inserting console:", err)
-            }
-        }
-        log.Println("Sample consoles inserted successfully")
+    if count > 0 {
+        log.Println("📦 Sample data already exists")
+        return
     }
+    
+    consoles := []struct {
+        typeVal     string
+        model       string
+        pricePerDay float64
+        description string
+        imageURL    string
+    }{
+        {"PS5", "PlayStation 5 Standard", 800, "Полная комплектация: 2 контроллера DualSense", "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"},
+        {"PS5", "PlayStation 5 Digital", 800, "Цифровая версия, 825 GB SSD", "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"},
+        {"PS4", "PlayStation 4 Slim", 500, "500 GB HDD, компактный дизайн", "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"},
+        {"XBOX", "Xbox Series X", 800, "1 ТБ SSD, 4K Gaming", "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"},
+        {"XBOX", "Xbox Series S", 800, "512 ГБ SSD, цифровая версия", "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"},
+        {"XBOX", "Xbox One X", 500, "1 ТБ HDD, 4K Gaming", "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"},
+    }
+    
+    for _, c := range consoles {
+        _, err := DB.Exec(
+            "INSERT INTO consoles (type, model, price_per_day, description, image_url) VALUES ($1, $2, $3, $4, $5)",
+            c.typeVal, c.model, c.pricePerDay, c.description, c.imageURL,
+        )
+        if err != nil {
+            log.Printf("⚠️ Error inserting console: %v", err)
+        }
+    }
+    log.Println("✅ Sample consoles inserted")
 }

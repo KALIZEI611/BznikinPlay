@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"console-rental/database"
-	"console-rental/models"
 	"net/http"
 	"strconv"
 
@@ -17,14 +16,27 @@ func GetConsoles(c *gin.Context) {
     }
     defer rows.Close()
     
-    var consoles []models.Console
+    var consoles []gin.H
     for rows.Next() {
-        var console models.Console
-        err := rows.Scan(&console.ID, &console.Type, &console.Model, &console.PricePerDay, &console.IsAvailable, &console.Description, &console.ImageURL)
+        var id int
+        var typeVal, model, description, imageURL string
+        var pricePerDay float64
+        var isAvailable bool
+        
+        err := rows.Scan(&id, &typeVal, &model, &pricePerDay, &isAvailable, &description, &imageURL)
         if err != nil {
             continue
         }
-        consoles = append(consoles, console)
+        
+        consoles = append(consoles, gin.H{
+            "id": id,
+            "type": typeVal,
+            "model": model,
+            "price_per_day": pricePerDay,
+            "is_available": isAvailable,
+            "description": description,
+            "image_url": imageURL,
+        })
     }
     
     c.JSON(http.StatusOK, consoles)
@@ -33,11 +45,11 @@ func GetConsoles(c *gin.Context) {
 func GetConsoleByID(c *gin.Context) {
     id, _ := strconv.Atoi(c.Param("id"))
     
-    var console models.Console
+    var console gin.H
     err := database.DB.QueryRow(
         "SELECT id, type, model, price_per_day, is_available, description, image_url FROM consoles WHERE id = $1",
         id,
-    ).Scan(&console.ID, &console.Type, &console.Model, &console.PricePerDay, &console.IsAvailable, &console.Description, &console.ImageURL)
+    ).Scan(&console)
     
     if err != nil {
         c.JSON(http.StatusNotFound, gin.H{"error": "Console not found"})
