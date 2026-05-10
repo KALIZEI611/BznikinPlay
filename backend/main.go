@@ -1,19 +1,92 @@
 package main
 
 import (
+	"console-rental/database"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
+var jwtSecret = []byte("your-super-secret-jwt-key-change-in-production")
+
+// Структура для JWT claims
+type Claims struct {
+    UserID   int    `json:"user_id"`
+    Username string `json:"username"`
+    Email    string `json:"email"`
+    jwt.RegisteredClaims
+}
+
+// Генерация JWT токена
+func generateToken(userID int, username, email string) (string, error) {
+    claims := Claims{
+        UserID:   userID,
+        Username: username,
+        Email:    email,
+        RegisteredClaims: jwt.RegisteredClaims{
+            ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+            IssuedAt:  jwt.NewNumericDate(time.Now()),
+        },
+    }
+    
+    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+    return token.SignedString(jwtSecret)
+}
+
+// Middleware для проверки JWT
+func authMiddleware() gin.HandlerFunc {
+    return func(c *gin.Context) {
+        authHeader := c.GetHeader("Authorization")
+        if authHeader == "" {
+            c.JSON(401, gin.H{"error": "No authorization header"})
+            c.Abort()
+            return
+        }
+        
+        parts := strings.SplitN(authHeader, " ", 2)
+        if len(parts) != 2 || parts[0] != "Bearer" {
+            c.JSON(401, gin.H{"error": "Invalid authorization header format"})
+            c.Abort()
+            return
+        }
+        
+        tokenString := parts[1]
+        claims := &Claims{}
+        
+        token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+            return jwtSecret, nil
+        })
+        
+        if err != nil || !token.Valid {
+            c.JSON(401, gin.H{"error": "Invalid or expired token"})
+            c.Abort()
+            return
+        }
+        
+        c.Set("user_id", claims.UserID)
+        c.Set("username", claims.Username)
+        c.Set("email", claims.Email)
+        c.Next()
+    }
+}
+
 func main() {
+    // Подключение к БД
+    if err := database.InitDB(); err != nil {
+        log.Printf("Warning: Could not connect to database: %v", err)
+        log.Println("Will continue without database...")
+    }
+    
     r := gin.Default()
     
-    log.Println("🚀 Starting ConsoleRent backend...")
+    log.Println("🚀 Starting ConsoleRent backend with JWT auth...")
     
     // CORS
     r.Use(cors.New(cors.Config{
@@ -28,11 +101,7 @@ func main() {
     
     // Health check
     r.GET("/health", func(c *gin.Context) {
-        c.JSON(200, gin.H{
-            "status": "ok",
-            "message": "Server is running",
-            "timestamp": time.Now().Unix(),
-        })
+        c.JSON(200, gin.H{"status": "ok", "timestamp": time.Now().Unix()})
     })
     
     // ========== КАТАЛОГ КОНСОЛЕЙ ==========
@@ -47,72 +116,145 @@ func main() {
         })
     })
     
-    // ========== АВТОРИЗАЦИЯ ==========
-    r.POST("/api/login", func(c *gin.Context) {
-        var req struct {
-            Email    string `json:"email"`
-            Password string `json:"password"`
-        }
-        c.ShouldBindJSON(&req)
-        
-        token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.test"
-        
-        c.JSON(200, gin.H{
-            "message": "Login successful",
-            "token": token,
-            "user": gin.H{"id": 1, "username": "user", "email": req.Email},
-        })
-    })
-    
+    // ========== РЕГИСТРАЦИЯ ==========
     r.POST("/api/register", func(c *gin.Context) {
         var req struct {
             Username string `json:"username"`
             Email    string `json:"email"`
             Password string `json:"password"`
         }
-        c.ShouldBindJSON(&req)
         
-        token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.test"
+        if err := c.ShouldBindJSON(&req); err != nil {
+            c.JSON(400, gin.H{"error": "Invalid request"})
+            return
+        }
+        
+        // Проверяем, существует ли пользователь
+        var exists bool
+        database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)", req.Email).Scan(&exists)
+        if exists {
+            c.JSON(400, gin.H{"error": "User with this email already exists"})
+            return
+        }
+        
+        // Хешируем пароль
+        hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+        if err != nil {
+            c.JSON(500, gin.H{"error": "Failed to hash password"})
+            return
+        }
+        
+        // Создаём пользователя
+        var userID int
+        err = database.DB.QueryRow(
+            "INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id",
+            req.Username, req.Email, string(hashedPassword),
+        ).Scan(&userID)
+        
+        if err != nil {
+            c.JSON(500, gin.H{"error": "Failed to create user"})
+            return
+        }
+        
+        // Генерируем JWT токен
+        token, err := generateToken(userID, req.Username, req.Email)
+        if err != nil {
+            c.JSON(500, gin.H{"error": "Failed to generate token"})
+            return
+        }
         
         c.JSON(201, gin.H{
             "message": "User created successfully",
             "token": token,
-            "user": gin.H{"id": 1, "username": req.Username, "email": req.Email},
+            "user": gin.H{
+                "id": userID,
+                "username": req.Username,
+                "email": req.Email,
+            },
         })
     })
     
-    // ========== ПРОФИЛЬ ==========
-    r.GET("/api/user/profile", func(c *gin.Context) {
-        c.JSON(200, gin.H{
-            "id": 1,
-            "username": "testuser",
-            "email": "test@example.com",
-            "created_at": time.Now().AddDate(-1, 0, 0).Format(time.RFC3339),
-        })
-    })
-    
-    r.PUT("/api/user/profile", func(c *gin.Context) {
+    // ========== ВХОД ==========
+    r.POST("/api/login", func(c *gin.Context) {
         var req struct {
-            Username        string `json:"username"`
-            Email           string `json:"email"`
-            CurrentPassword string `json:"current_password"`
-            NewPassword     string `json:"new_password"`
+            Email    string `json:"email"`
+            Password string `json:"password"`
         }
-        c.ShouldBindJSON(&req)
+        
+        if err := c.ShouldBindJSON(&req); err != nil {
+            c.JSON(400, gin.H{"error": "Invalid request"})
+            return
+        }
+        
+        // Ищем пользователя
+        var userID int
+        var username, hashedPassword string
+        err := database.DB.QueryRow(
+            "SELECT id, username, password FROM users WHERE email = $1",
+            req.Email,
+        ).Scan(&userID, &username, &hashedPassword)
+        
+        if err != nil {
+            c.JSON(401, gin.H{"error": "Invalid email or password"})
+            return
+        }
+        
+        // Проверяем пароль
+        err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(req.Password))
+        if err != nil {
+            c.JSON(401, gin.H{"error": "Invalid email or password"})
+            return
+        }
+        
+        // Генерируем JWT токен
+        token, err := generateToken(userID, username, req.Email)
+        if err != nil {
+            c.JSON(500, gin.H{"error": "Failed to generate token"})
+            return
+        }
         
         c.JSON(200, gin.H{
-            "message": "Profile updated successfully",
-            "token": "new-token",
-            "user": gin.H{"id": 1, "username": req.Username, "email": req.Email},
+            "message": "Login successful",
+            "token": token,
+            "user": gin.H{
+                "id": userID,
+                "username": username,
+                "email": req.Email,
+            },
         })
     })
     
-    // ========== АРЕНДА ==========
-    // Временное хранилище аренд в памяти
+    // ========== ПРОФИЛЬ (защищённый маршрут) ==========
+    r.GET("/api/user/profile", authMiddleware(), func(c *gin.Context) {
+        userID := c.GetInt("user_id")
+        
+        var username, email string
+        var createdAt time.Time
+        err := database.DB.QueryRow(
+            "SELECT username, email, created_at FROM users WHERE id = $1",
+            userID,
+        ).Scan(&username, &email, &createdAt)
+        
+        if err != nil {
+            c.JSON(404, gin.H{"error": "User not found"})
+            return
+        }
+        
+        c.JSON(200, gin.H{
+            "id": userID,
+            "username": username,
+            "email": email,
+            "created_at": createdAt,
+        })
+    })
+    
+    // ========== АРЕНДА (защищённый маршрут) ==========
     var rentals = []gin.H{}
     var nextId = 1
     
-    r.POST("/api/rentals", func(c *gin.Context) {
+    r.POST("/api/rentals", authMiddleware(), func(c *gin.Context) {
+        userID := c.GetInt("user_id")
+        
         var req struct {
             ConsoleID       int    `json:"console_id"`
             StartDate       string `json:"start_date"`
@@ -123,71 +265,45 @@ func main() {
         }
         
         if err := c.ShouldBindJSON(&req); err != nil {
-            log.Printf("Error binding JSON: %v", err)
-            c.JSON(400, gin.H{"error": "Invalid request data: " + err.Error()})
+            c.JSON(400, gin.H{"error": "Invalid request"})
             return
         }
         
-        log.Printf("Received rental request: console_id=%d, address=%s", req.ConsoleID, req.DeliveryAddress)
+        // Определяем цену и модель консоли
+        var consolePrice float64
+        var consoleModel string
+        var consoleType string
+        var consoleImage string
         
-        // Определяем цену консоли и модель
-        var consolePrice float64 = 800
-        var consoleModel string = "Console"
-        var consoleType string = "PS5"
-        var consoleImage string = ""
-        
-        // Карта консолей с правильными типами
         switch req.ConsoleID {
         case 1:
-            consolePrice = 800
-            consoleModel = "PlayStation 5 Standard"
-            consoleType = "PS5"
-            consoleImage = "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"
+            consolePrice, consoleModel, consoleType, consoleImage = 800, "PlayStation 5 Standard", "PS5", "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"
         case 2:
-            consolePrice = 800
-            consoleModel = "PlayStation 5 Digital"
-            consoleType = "PS5"
-            consoleImage = "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"
+            consolePrice, consoleModel, consoleType, consoleImage = 800, "PlayStation 5 Digital", "PS5", "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"
         case 3:
-            consolePrice = 500
-            consoleModel = "PlayStation 4 Slim"
-            consoleType = "PS4"
-            consoleImage = "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"
+            consolePrice, consoleModel, consoleType, consoleImage = 500, "PlayStation 4 Slim", "PS4", "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"
         case 4:
-            consolePrice = 800
-            consoleModel = "Xbox Series X"
-            consoleType = "XBOX"
-            consoleImage = "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"
+            consolePrice, consoleModel, consoleType, consoleImage = 800, "Xbox Series X", "XBOX", "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"
         case 5:
-            consolePrice = 800
-            consoleModel = "Xbox Series S"
-            consoleType = "XBOX"
-            consoleImage = "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"
+            consolePrice, consoleModel, consoleType, consoleImage = 800, "Xbox Series S", "XBOX", "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"
         case 6:
-            consolePrice = 500
-            consoleModel = "Xbox One X"
-            consoleType = "XBOX"
-            consoleImage = "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"
+            consolePrice, consoleModel, consoleType, consoleImage = 500, "Xbox One X", "XBOX", "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"
         default:
-            consolePrice = 800
-            consoleModel = "Unknown Console"
-            consoleType = "OTHER"
+            consolePrice, consoleModel, consoleType, consoleImage = 800, "Unknown Console", "OTHER", ""
         }
         
-        // Рассчитываем количество дней
+        // Рассчитываем стоимость
         startDate, _ := time.Parse(time.RFC3339, req.StartDate)
         endDate, _ := time.Parse(time.RFC3339, req.EndDate)
         days := int(endDate.Sub(startDate).Hours()/24) + 1
         if days < 1 {
             days = 1
         }
-        
         totalPrice := consolePrice * float64(days)
-        
-        log.Printf("Calculated: %d days × %.2f = %.2f", days, consolePrice, totalPrice)
         
         rental := gin.H{
             "id":               nextId,
+            "user_id":          userID,
             "console_id":       req.ConsoleID,
             "console": gin.H{
                 "type":      consoleType,
@@ -214,32 +330,27 @@ func main() {
         })
     })
     
-    r.GET("/api/my-rentals", func(c *gin.Context) {
-        // Получаем токен из заголовка
-        authHeader := c.GetHeader("Authorization")
-        log.Printf("Auth header: %s", authHeader)
+    r.GET("/api/my-rentals", authMiddleware(), func(c *gin.Context) {
+        userID := c.GetInt("user_id")
         
-        // Возвращаем все аренды (для теста)
         userRentals := []gin.H{}
         for _, r := range rentals {
-            userRentals = append(userRentals, gin.H{
-                "id": r["id"],
-                "console": gin.H{
-                    "type":      r["console"].(gin.H)["type"],
-                    "model":     r["console"].(gin.H)["model"],
-                    "image_url": r["console"].(gin.H)["image_url"],
-                },
-                "start_date":        r["start_date"],
-                "end_date":          r["end_date"],
-                "total_price":       r["total_price"],
-                "delivery_address":  r["delivery_address"],
-                "status":            r["status"],
-            })
+            if r["user_id"] == userID {
+                userRentals = append(userRentals, gin.H{
+                    "id": r["id"],
+                    "console": r["console"],
+                    "start_date":        r["start_date"],
+                    "end_date":          r["end_date"],
+                    "total_price":       r["total_price"],
+                    "delivery_address":  r["delivery_address"],
+                    "status":            r["status"],
+                })
+            }
         }
         c.JSON(200, userRentals)
     })
     
-    r.PUT("/api/rentals/:id/return", func(c *gin.Context) {
+    r.PUT("/api/rentals/:id/return", authMiddleware(), func(c *gin.Context) {
         c.JSON(200, gin.H{"message": "Console returned successfully"})
     })
     
