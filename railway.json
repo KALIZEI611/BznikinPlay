@@ -1,0 +1,11 @@
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "cd backend && go build -o main ."
+  },
+  "deploy": {
+    "startCommand": "cd backend && ./main",
+    "healthcheckPath": "/api/consoles",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
