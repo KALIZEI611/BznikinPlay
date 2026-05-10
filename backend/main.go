@@ -29,12 +29,21 @@ func main() {
     
     r := gin.Default()
     
-    // CORS настройки для Vercel и Railway
+    // Health check endpoint for Railway
+    r.GET("/health", func(c *gin.Context) {
+        c.JSON(200, gin.H{
+            "status": "ok",
+            "message": "Server is running",
+            "timestamp": time.Now().Unix(),
+        })
+    })
+    
+    // CORS настройки
     r.Use(cors.New(cors.Config{
         AllowOrigins: []string{
             "http://localhost:3000",
             "http://localhost:5173",
-            "https://console-rental.vercel.app",
+            "https://bznikin-play.vercel.app",
             "https://*.vercel.app",
         },
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -53,11 +62,8 @@ func main() {
     auth := r.Group("/api")
     auth.Use(middleware.AuthMiddleware())
     {
-        // Профиль
         auth.GET("/user/profile", handlers.GetUserProfile)
         auth.PUT("/user/profile", handlers.UpdateUserProfile)
-        
-        // Аренды
         auth.POST("/rentals", handlers.CreateRental)
         auth.GET("/my-rentals", handlers.GetUserRentals)
         auth.PUT("/rentals/:id/return", handlers.ReturnConsole)

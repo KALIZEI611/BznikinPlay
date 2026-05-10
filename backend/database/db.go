@@ -1,33 +1,32 @@
 package database
 
 import (
-	"database/sql"
-	"fmt"
-	"log"
-	"os"
+    "database/sql"
+    "fmt"
+    "log"
+    "os"
 
-	_ "github.com/lib/pq"
+    _ "github.com/lib/pq"
 )
 
 var DB *sql.DB
 
 func InitDB() error {
-    // Приоритет у переменных Railway
-    host := os.Getenv("DB_HOST")
-    port := os.Getenv("DB_PORT")
-    user := os.Getenv("DB_USER")
-    password := os.Getenv("DB_PASSWORD")
-    dbname := os.Getenv("DB_NAME")
+    // Используем стандартные переменные Railway
+    host := os.Getenv("PGHOST")
+    port := os.Getenv("PGPORT")
+    user := os.Getenv("PGUSER")
+    password := os.Getenv("PGPASSWORD")
+    dbname := os.Getenv("PGDATABASE")
     
-    // Логируем для отладки (не логируйте пароль!)
-    log.Printf("DB Config - Host: %s, Port: %s, User: %s, DBName: %s", host, port, user, dbname)
+    // Логируем для отладки
+    log.Printf("Connecting: host=%s port=%s user=%s dbname=%s", host, port, user, dbname)
     
-    // Проверяем обязательные параметры
     if host == "" || port == "" || user == "" || password == "" || dbname == "" {
-        return fmt.Errorf("missing required database environment variables")
+        return fmt.Errorf("missing required database environment variables: PGHOST=%s, PGPORT=%s, PGUSER=%s, PGPASSWORD=%s, PGDATABASE=%s", 
+            host, port, user, password, dbname)
     }
     
-    // Используем sslmode=require для Railway PostgreSQL
     connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
         host, port, user, password, dbname)
     
@@ -37,17 +36,12 @@ func InitDB() error {
         return fmt.Errorf("error opening database: %v", err)
     }
     
-    // Настройка пула соединений
-    DB.SetMaxOpenConns(25)
-    DB.SetMaxIdleConns(5)
-    
     err = DB.Ping()
     if err != nil {
         return fmt.Errorf("database ping failed: %v", err)
     }
     
-    log.Println("Database connected successfully")
-    
+    log.Println("Database connected successfully!")
     createTables()
     insertSampleData()
     return nil
@@ -90,7 +84,7 @@ func createTables() {
             log.Printf("Error creating table: %v", err)
         }
     }
-    log.Println("Tables created/verified successfully")
+    log.Println("Tables verified/created successfully")
 }
 
 func insertSampleData() {
