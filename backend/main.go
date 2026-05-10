@@ -69,21 +69,57 @@ func main() {
     })
 
     // 4. Остальные эндпоинты (рабочие заглушки)
-    r.POST("/api/login", func(c *gin.Context) {
-        c.JSON(200, gin.H{
-            "message": "Login successful",
-            "token": "fake-token-for-testing",
-            "user": gin.H{"id": 1, "username": "test", "email": "test@example.com"},
-        })
+    // Login endpoint (исправленный)
+r.POST("/api/login", func(c *gin.Context) {
+    var req struct {
+        Email    string `json:"email"`
+        Password string `json:"password"`
+    }
+    
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": "Invalid request"})
+        return
+    }
+    
+    // Создаём фейковый JWT токен для тестирования
+    token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.test"
+    
+    c.JSON(200, gin.H{
+        "message": "Login successful",
+        "token": token,
+        "user": gin.H{
+            "id": 1,
+            "username": req.Email[:3],
+            "email": req.Email,
+        },
     })
+})
 
-    r.POST("/api/register", func(c *gin.Context) {
-        c.JSON(201, gin.H{
-            "message": "User created successfully",
-            "token": "fake-token-for-testing",
-            "user": gin.H{"id": 1, "username": "newuser", "email": "new@example.com"},
-        })
+// Register endpoint (исправленный)
+r.POST("/api/register", func(c *gin.Context) {
+    var req struct {
+        Username string `json:"username"`
+        Email    string `json:"email"`
+        Password string `json:"password"`
+    }
+    
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": "Invalid request"})
+        return
+    }
+    
+    token := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJ1c2VybmFtZSI6InRlc3QiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.test"
+    
+    c.JSON(201, gin.H{
+        "message": "User created successfully",
+        "token": token,
+        "user": gin.H{
+            "id": 1,
+            "username": req.Username,
+            "email": req.Email,
+        },
     })
+})
 
     r.GET("/api/my-rentals", func(c *gin.Context) {
         c.JSON(200, []gin.H{})

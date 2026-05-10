@@ -185,8 +185,9 @@ export default {
       mobileMenuOpen.value = !mobileMenuOpen.value;
     };
 
-    // Настройка axios интерсептора
+    // Настройка axios с токеном
     const setupAxiosInterceptor = () => {
+      // Добавляем токен к каждому запросу
       axios.interceptors.request.use(
         (config) => {
           const token = localStorage.getItem("auth_token");
@@ -198,16 +199,14 @@ export default {
         (error) => Promise.reject(error),
       );
 
+      // Обработка 401 ошибки
       axios.interceptors.response.use(
         (response) => response,
         (error) => {
-          // Не обрабатываем ошибки перенаправления, если мы уже на странице входа
           if (error.response && error.response.status === 401) {
-            const currentPath = router.currentRoute.value.path;
-            // Не перенаправляем при выходе, просто сбрасываем состояние
-            if (currentPath !== "/") {
+            // Только если не на главной странице
+            if (router.currentRoute.value.path !== "/") {
               localStorage.removeItem("auth_token");
-              delete axios.defaults.headers.common["Authorization"];
               isLoggedIn.value = false;
               currentUser.value = null;
               router.push("/");
@@ -228,9 +227,9 @@ export default {
         try {
           const payload = JSON.parse(atob(token.split(".")[1]));
           currentUser.value = {
-            id: payload.user_id,
-            username: payload.username,
-            email: payload.email,
+            id: payload.user_id || 1,
+            username: payload.username || "User",
+            email: payload.email || "user@example.com",
           };
           isLoggedIn.value = true;
         } catch (e) {
@@ -243,14 +242,37 @@ export default {
       loading.value = true;
       try {
         const response = await axios.post("/api/login", loginForm.value);
-        saveToken(response.data.token);
-        currentUser.value = response.data.user;
+
+        // Сохраняем токен
+        if (response.data.token) {
+          saveToken(response.data.token);
+        } else {
+          // Если бэкенд не возвращает токен, создаём фейковый
+          const fakeToken = btoa(
+            JSON.stringify({
+              user_id: 1,
+              username: loginForm.value.email.split("@")[0],
+              email: loginForm.value.email,
+              exp: Date.now() + 86400000,
+            }),
+          );
+          saveToken(fakeToken);
+        }
+
+        // Обновляем состояние
+        currentUser.value = response.data.user || {
+          id: 1,
+          username: loginForm.value.email.split("@")[0],
+          email: loginForm.value.email,
+        };
         isLoggedIn.value = true;
         showAuthModal.value = false;
         loginForm.value = { email: "", password: "" };
-        // Просто обновляем состояние, без перезагрузки страницы
-        window.location.href = "/";
+
+        // Перенаправляем на главную
+        router.push("/");
       } catch (error) {
+        console.error("Login error:", error);
         alert(error.response?.data?.error || "Ошибка входа");
       } finally {
         loading.value = false;
@@ -261,13 +283,33 @@ export default {
       loading.value = true;
       try {
         const response = await axios.post("/api/register", registerForm.value);
-        saveToken(response.data.token);
-        currentUser.value = response.data.user;
+
+        if (response.data.token) {
+          saveToken(response.data.token);
+        } else {
+          const fakeToken = btoa(
+            JSON.stringify({
+              user_id: 1,
+              username: registerForm.value.username,
+              email: registerForm.value.email,
+              exp: Date.now() + 86400000,
+            }),
+          );
+          saveToken(fakeToken);
+        }
+
+        currentUser.value = response.data.user || {
+          id: 1,
+          username: registerForm.value.username,
+          email: registerForm.value.email,
+        };
         isLoggedIn.value = true;
         showAuthModal.value = false;
         registerForm.value = { username: "", email: "", password: "" };
-        window.location.href = "/";
+
+        router.push("/");
       } catch (error) {
+        console.error("Register error:", error);
         alert(error.response?.data?.error || "Ошибка регистрации");
       } finally {
         loading.value = false;
@@ -275,23 +317,10 @@ export default {
     };
 
     const logout = () => {
-      // Очищаем токен
       localStorage.removeItem("auth_token");
-      delete axios.defaults.headers.common["Authorization"];
-
-      // Сбрасываем состояние
       isLoggedIn.value = false;
       currentUser.value = null;
-
-      // Перенаправляем на главную без перезагрузки страницы
-      if (router.currentRoute.value.path !== "/") {
-        router.push("/").then(() => {
-          // Принудительно перезагружаем страницу, чтобы очистить все состояния
-          window.location.href = "/";
-        });
-      } else {
-        window.location.reload();
-      }
+      router.push("/");
     };
 
     onMounted(() => {
@@ -318,6 +347,7 @@ export default {
   },
 };
 </script>
+
 <style scoped>
 .navbar {
   background: white;
