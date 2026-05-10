@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -122,35 +123,77 @@ func main() {
         }
         
         if err := c.ShouldBindJSON(&req); err != nil {
-            c.JSON(400, gin.H{"error": "Invalid request data"})
+            log.Printf("Error binding JSON: %v", err)
+            c.JSON(400, gin.H{"error": "Invalid request data: " + err.Error()})
             return
         }
         
-        // Находим консоль
+        log.Printf("Received rental request: console_id=%d, address=%s", req.ConsoleID, req.DeliveryAddress)
+        
+        // Определяем цену консоли и модель
         var consolePrice float64 = 800
         var consoleModel string = "Console"
-        for _, c := range []gin.H{
-            {"id": 1, "price_per_day": 800, "model": "PlayStation 5 Standard"},
-            {"id": 2, "price_per_day": 800, "model": "PlayStation 5 Digital"},
-            {"id": 3, "price_per_day": 500, "model": "PlayStation 4 Slim"},
-            {"id": 4, "price_per_day": 800, "model": "Xbox Series X"},
-            {"id": 5, "price_per_day": 800, "model": "Xbox Series S"},
-            {"id": 6, "price_per_day": 500, "model": "Xbox One X"},
-        } {
-            if c["id"] == req.ConsoleID {
-                consolePrice = c["price_per_day"].(float64)
-                consoleModel = c["model"].(string)
-                break
-            }
+        var consoleType string = "PS5"
+        var consoleImage string = ""
+        
+        // Карта консолей с правильными типами
+        switch req.ConsoleID {
+        case 1:
+            consolePrice = 800
+            consoleModel = "PlayStation 5 Standard"
+            consoleType = "PS5"
+            consoleImage = "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"
+        case 2:
+            consolePrice = 800
+            consoleModel = "PlayStation 5 Digital"
+            consoleType = "PS5"
+            consoleImage = "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"
+        case 3:
+            consolePrice = 500
+            consoleModel = "PlayStation 4 Slim"
+            consoleType = "PS4"
+            consoleImage = "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"
+        case 4:
+            consolePrice = 800
+            consoleModel = "Xbox Series X"
+            consoleType = "XBOX"
+            consoleImage = "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"
+        case 5:
+            consolePrice = 800
+            consoleModel = "Xbox Series S"
+            consoleType = "XBOX"
+            consoleImage = "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"
+        case 6:
+            consolePrice = 500
+            consoleModel = "Xbox One X"
+            consoleType = "XBOX"
+            consoleImage = "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"
+        default:
+            consolePrice = 800
+            consoleModel = "Unknown Console"
+            consoleType = "OTHER"
         }
         
-        // Рассчитываем стоимость
-        totalPrice := consolePrice
+        // Рассчитываем количество дней
+        startDate, _ := time.Parse(time.RFC3339, req.StartDate)
+        endDate, _ := time.Parse(time.RFC3339, req.EndDate)
+        days := int(endDate.Sub(startDate).Hours()/24) + 1
+        if days < 1 {
+            days = 1
+        }
+        
+        totalPrice := consolePrice * float64(days)
+        
+        log.Printf("Calculated: %d days × %.2f = %.2f", days, consolePrice, totalPrice)
         
         rental := gin.H{
             "id":               nextId,
             "console_id":       req.ConsoleID,
-            "console_model":    consoleModel,
+            "console": gin.H{
+                "type":      consoleType,
+                "model":     consoleModel,
+                "image_url": consoleImage,
+            },
             "start_date":       req.StartDate,
             "end_date":         req.EndDate,
             "total_price":      totalPrice,
@@ -167,20 +210,24 @@ func main() {
         c.JSON(201, gin.H{
             "rental_id":   rental["id"],
             "total_price": totalPrice,
-            "message":     "Rental created successfully",
+            "message":     fmt.Sprintf("Rental created successfully! Total: %.2f ₽", totalPrice),
         })
     })
     
     r.GET("/api/my-rentals", func(c *gin.Context) {
-        // Возвращаем аренды текущего пользователя
+        // Получаем токен из заголовка
+        authHeader := c.GetHeader("Authorization")
+        log.Printf("Auth header: %s", authHeader)
+        
+        // Возвращаем все аренды (для теста)
         userRentals := []gin.H{}
         for _, r := range rentals {
             userRentals = append(userRentals, gin.H{
                 "id": r["id"],
                 "console": gin.H{
-                    "type":       "PS5",
-                    "model":      r["console_model"],
-                    "image_url":  "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig",
+                    "type":      r["console"].(gin.H)["type"],
+                    "model":     r["console"].(gin.H)["model"],
+                    "image_url": r["console"].(gin.H)["image_url"],
                 },
                 "start_date":        r["start_date"],
                 "end_date":          r["end_date"],
