@@ -261,7 +261,6 @@ func main() {
         }
         
         var consolePrice float64
-        var consoleModel string
         
         switch req.ConsoleID {
         case 1, 2, 4, 5:
