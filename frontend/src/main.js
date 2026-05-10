@@ -5,7 +5,8 @@ import axios from "axios";
 
 // Настройка базового URL для API
 const API_URL =
-  import.meta.env.VITE_API_URL || "https://your-backend-url.railway.app";
+  import.meta.env.VITE_API_URL ||
+  "https://bznikinplay-production.up.railway.app";
 axios.defaults.baseURL = API_URL;
 
 const app = createApp(App);

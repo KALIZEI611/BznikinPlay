@@ -1,35 +1,20 @@
 package main
 
 import (
-	"console-rental/database"
-	"console-rental/handlers"
-	"console-rental/middleware"
-	"log"
-	"os"
-	"time"
+    "log"
+    "os"
+    "time"
 
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
+    "github.com/gin-contrib/cors"
+    "github.com/gin-gonic/gin"
 )
 
 func main() {
-    // Инициализация базы данных с повторными попытками
-    for i := 0; i < 30; i++ {
-        err := database.InitDB()
-        if err == nil {
-            log.Println("Successfully connected to database")
-            break
-        }
-        log.Printf("Failed to connect to database (attempt %d/30): %v", i+1, err)
-        if i == 29 {
-            log.Fatal("Could not connect to database after 30 attempts")
-        }
-        time.Sleep(3 * time.Second)
-    }
-    
     r := gin.Default()
     
-    // Health check endpoint for Railway
+    log.Println("🚀 Starting ConsoleRent backend (simplified version)...")
+    
+    // Health check endpoint
     r.GET("/health", func(c *gin.Context) {
         c.JSON(200, gin.H{
             "status": "ok",
@@ -38,42 +23,34 @@ func main() {
         })
     })
     
+    // API endpoint для консолей (временные данные)
+    r.GET("/api/consoles", func(c *gin.Context) {
+        c.JSON(200, []gin.H{
+            {"id": 1, "type": "PS5", "model": "PlayStation 5 Standard", "price_per_day": 800, "is_available": true, "image_url": "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"},
+            {"id": 2, "type": "PS5", "model": "PlayStation 5 Digital", "price_per_day": 800, "is_available": true, "image_url": "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"},
+            {"id": 3, "type": "PS4", "model": "PlayStation 4 Slim", "price_per_day": 500, "is_available": true, "image_url": "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"},
+            {"id": 4, "type": "XBOX", "model": "Xbox Series X", "price_per_day": 800, "is_available": true, "image_url": "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"},
+            {"id": 5, "type": "XBOX", "model": "Xbox Series S", "price_per_day": 800, "is_available": true, "image_url": "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"},
+            {"id": 6, "type": "XBOX", "model": "Xbox One X", "price_per_day": 500, "is_available": true, "image_url": "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"},
+        })
+    })
+    
     // CORS настройки
     r.Use(cors.New(cors.Config{
         AllowOrigins: []string{
-            "http://localhost:3000",
-            "http://localhost:5173",
             "https://bznikin-play.vercel.app",
-            "https://*.vercel.app",
+            "http://localhost:3000",
         },
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
-        ExposeHeaders:    []string{"Content-Length"},
         AllowCredentials: true,
     }))
-    
-    // Публичные маршруты
-    r.POST("/api/register", handlers.Register)
-    r.POST("/api/login", handlers.Login)
-    r.GET("/api/consoles", handlers.GetConsoles)
-    r.GET("/api/consoles/:id", handlers.GetConsoleByID)
-    
-    // Защищенные маршруты
-    auth := r.Group("/api")
-    auth.Use(middleware.AuthMiddleware())
-    {
-        auth.GET("/user/profile", handlers.GetUserProfile)
-        auth.PUT("/user/profile", handlers.UpdateUserProfile)
-        auth.POST("/rentals", handlers.CreateRental)
-        auth.GET("/my-rentals", handlers.GetUserRentals)
-        auth.PUT("/rentals/:id/return", handlers.ReturnConsole)
-    }
     
     port := os.Getenv("PORT")
     if port == "" {
         port = "8080"
     }
     
-    log.Printf("Server starting on port %s", port)
+    log.Printf("✅ Server starting on port %s", port)
     log.Fatal(r.Run(":" + port))
 }
