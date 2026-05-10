@@ -21,22 +21,19 @@ func main() {
             break
         }
         log.Printf("Failed to connect to database (attempt %d/30): %v", i+1, err)
-        time.Sleep(2 * time.Second)
+        if i == 29 {
+            log.Fatal("Could not connect to database after 30 attempts")
+        }
+        time.Sleep(3 * time.Second)
     }
     
     r := gin.Default()
     
-    // Получаем URL фронтенда из переменных окружения
-    frontendURL := os.Getenv("FRONTEND_URL")
-    if frontendURL == "" {
-        frontendURL = "http://localhost:3000"
-    }
-    
     // CORS настройки для Vercel и Railway
     r.Use(cors.New(cors.Config{
         AllowOrigins: []string{
-            frontendURL,
             "http://localhost:3000",
+            "http://localhost:5173",
             "https://console-rental.vercel.app",
             "https://*.vercel.app",
         },
