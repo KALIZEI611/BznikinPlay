@@ -29,14 +29,26 @@ type Claims struct {
 }
 
 // Временное хранилище пользователей (in-memory)
-var users = []User{
-    {ID: 1, Username: "testuser", Email: "test@example.com", Password: "$2a$10$N9qo8uLOickgx2ZMRZoMy.MrCvqKqKqKqKqKqKqKqKqKqKqKqKq"},
-}
-var nextUserID = 2
+var users = []User{}
+var nextUserID = 1
 
 // Временное хранилище аренд
 var rentals = []gin.H{}
 var nextRentalID = 1
+
+// Функция для добавления тестового пользователя при старте
+func init() {
+    // Хеш пароля "123456"
+    hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
+    users = append(users, User{
+        ID:       nextUserID,
+        Username: "testuser",
+        Email:    "test@example.com",
+        Password: string(hashedPassword),
+    })
+    nextUserID++
+    log.Println("✅ Test user created: test@example.com / 123456")
+}
 
 func generateToken(userID int, username, email string) (string, error) {
     claims := Claims{
@@ -98,6 +110,7 @@ func main() {
         AllowOrigins: []string{
             "https://bznikin-play.vercel.app",
             "http://localhost:3000",
+            "http://localhost:5173",
         },
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
         AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
@@ -115,7 +128,7 @@ func main() {
             {"id": 1, "type": "PS5", "model": "PlayStation 5 Standard", "price_per_day": 800, "is_available": true, "description": "Полная комплектация", "image_url": "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"},
             {"id": 2, "type": "PS5", "model": "PlayStation 5 Digital", "price_per_day": 800, "is_available": true, "description": "Цифровая версия", "image_url": "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13"},
             {"id": 3, "type": "PS4", "model": "PlayStation 4 Slim", "price_per_day": 500, "is_available": true, "description": "500 GB HDD", "image_url": "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig"},
-            {"id": 4, "type": "XBOX", "model": "Xbox Series X", "price_per_day": 800, "is_available": true, "description": "1 ТБ SSD, 4K", "image_url": "https://hatiko.ru/wa-data/public/blog/img/photo_2024-01-30_12-36-25.jpg"},
+            {"id": 4, "type": "XBOX", "model": "Xbox Series X", "price_per_day": 800, "is_available": true, "description": "1 ТБ SSD, 4K", "image_url": "https://avatars.mds.yandex.net/get-mpic/4956986/2a0000018da2f1bf854292750979fe770113/orig"},
             {"id": 5, "type": "XBOX", "model": "Xbox Series S", "price_per_day": 800, "is_available": true, "description": "512 ГБ SSD", "image_url": "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg"},
             {"id": 6, "type": "XBOX", "model": "Xbox One X", "price_per_day": 500, "is_available": true, "description": "1 ТБ HDD", "image_url": "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg"},
         })
@@ -134,6 +147,8 @@ func main() {
             return
         }
 
+        log.Printf("Registration attempt: %s, %s", req.Username, req.Email)
+
         // Проверяем, существует ли пользователь
         for _, u := range users {
             if u.Email == req.Email {
@@ -143,7 +158,11 @@ func main() {
         }
 
         // Хешируем пароль
-        hashedPassword, _ := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+        hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+        if err != nil {
+            c.JSON(500, gin.H{"error": "Failed to hash password"})
+            return
+        }
 
         // Создаём пользователя
         user := User{
@@ -154,6 +173,8 @@ func main() {
         }
         users = append(users, user)
         nextUserID++
+
+        log.Printf("User created successfully with ID: %d", user.ID)
 
         // Генерируем токен
         token, _ := generateToken(user.ID, user.Username, user.Email)
@@ -179,6 +200,8 @@ func main() {
             return
         }
 
+        log.Printf("Login attempt: %s", req.Email)
+
         // Ищем пользователя
         var foundUser *User
         for i, u := range users {
@@ -189,16 +212,20 @@ func main() {
         }
 
         if foundUser == nil {
-            c.JSON(401, gin.H{"error": "Invalid credentials"})
+            log.Printf("User not found: %s", req.Email)
+            c.JSON(401, gin.H{"error": "Invalid email or password"})
             return
         }
 
         // Проверяем пароль
         err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.Password))
         if err != nil {
-            c.JSON(401, gin.H{"error": "Invalid credentials"})
+            log.Printf("Invalid password for user: %s", req.Email)
+            c.JSON(401, gin.H{"error": "Invalid email or password"})
             return
         }
+
+        log.Printf("User logged in: %s (ID: %d)", foundUser.Email, foundUser.ID)
 
         // Генерируем токен
         token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
@@ -252,11 +279,36 @@ func main() {
             return
         }
 
+        log.Printf("Rental created for user %d, console %d", userID, req.ConsoleID)
+
         // Цены консолей
         prices := map[int]float64{1: 800, 2: 800, 3: 500, 4: 800, 5: 800, 6: 500}
         price := prices[req.ConsoleID]
         if price == 0 {
             price = 800
+        }
+
+        // Маппинг изображений для консолей
+        images := map[int]string{
+            1: "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig",
+            2: "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13",
+            3: "https://avatars.mds.yandex.net/get-mpic/5173149/2a0000019180dbf1814ebb7ae678faa8667a/orig",
+            4: "https://avatars.mds.yandex.net/get-mpic/4956986/2a0000018da2f1bf854292750979fe770113/orig",
+            5: "https://api.2droida.ru/storage/products/b11679d3f73924628580ceea19c6e9eb/5153/7a33c4eca9aca748f6753e1cb3f90101.jpg",
+            6: "https://gameshock174.ru/upload/iblock/bbb/bbbdbb58eb867f610801394b5ef15e3a.jpg",
+        }
+
+        models := map[int]string{
+            1: "PlayStation 5 Standard",
+            2: "PlayStation 5 Digital",
+            3: "PlayStation 4 Slim",
+            4: "Xbox Series X",
+            5: "Xbox Series S",
+            6: "Xbox One X",
+        }
+
+        types := map[int]string{
+            1: "PS5", 2: "PS5", 3: "PS4", 4: "XBOX", 5: "XBOX", 6: "XBOX",
         }
 
         rental := gin.H{
@@ -270,6 +322,11 @@ func main() {
             "phone":            req.Phone,
             "status":           "active",
             "created_at":       time.Now(),
+            "console": gin.H{
+                "type":      types[req.ConsoleID],
+                "model":     models[req.ConsoleID],
+                "image_url": images[req.ConsoleID],
+            },
         }
         rentals = append(rentals, rental)
         nextRentalID++
@@ -287,7 +344,15 @@ func main() {
         var userRentals []gin.H
         for _, r := range rentals {
             if r["user_id"] == userID {
-                userRentals = append(userRentals, r)
+                userRentals = append(userRentals, gin.H{
+                    "id":               r["id"],
+                    "console":          r["console"],
+                    "start_date":       r["start_date"],
+                    "end_date":         r["end_date"],
+                    "total_price":      r["total_price"],
+                    "delivery_address": r["delivery_address"],
+                    "status":           r["status"],
+                })
             }
         }
         c.JSON(200, userRentals)
@@ -303,5 +368,6 @@ func main() {
     }
 
     log.Printf("✅ Server starting on port %s", port)
+    log.Printf("📊 Users count: %d", len(users))
     log.Fatal(r.Run(":" + port))
 }
