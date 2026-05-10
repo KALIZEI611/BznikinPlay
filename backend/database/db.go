@@ -12,22 +12,27 @@ import (
 var DB *sql.DB
 
 func InitDB() error {
+    // Приоритет у переменных окружения Railway
     host := os.Getenv("PGHOST")
     port := os.Getenv("PGPORT")
     user := os.Getenv("PGUSER")
     password := os.Getenv("PGPASSWORD")
     dbname := os.Getenv("PGDATABASE")
     
+    // Если переменные не найдены, используем значения по умолчанию
     if host == "" {
         host = "postgres-production-096b.up.railway.app"
         port = "5432"
         user = "postgres"
         password = "pagfWwxnPVmpgnsLeXzxhyBAaWgkpmEO"
         dbname = "railway"
+        log.Println("Using default database connection settings")
     }
     
     connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require",
         host, port, user, password, dbname)
+    
+    log.Printf("Attempting to connect to database at %s:%s", host, port)
     
     var err error
     DB, err = sql.Open("postgres", connStr)
@@ -35,15 +40,18 @@ func InitDB() error {
         return fmt.Errorf("error opening database: %v", err)
     }
     
-    DB.SetMaxOpenConns(25)
+    DB.SetMaxOpenConns(10)
     DB.SetMaxIdleConns(5)
     
+    // Проверяем соединение
     err = DB.Ping()
     if err != nil {
         return fmt.Errorf("database ping failed: %v", err)
     }
     
     log.Println("✅ Database connected successfully!")
+    
+    // Создаём таблицы
     createTables()
     return nil
 }
