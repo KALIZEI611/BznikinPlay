@@ -29,17 +29,13 @@ type Claims struct {
     jwt.RegisteredClaims
 }
 
-// Временное хранилище пользователей (in-memory)
 var users = []User{}
 var nextUserID = 1
 
-// Временное хранилище аренд
 var rentals = []gin.H{}
 var nextRentalID = 1
 
-// Функция для добавления тестового пользователя при старте
 func init() {
-    // Хеш пароля "123456"
     hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
     users = append(users, User{
         ID:       nextUserID,
@@ -106,7 +102,6 @@ func main() {
     
     log.Println("🚀 Запуск ConsoleRent backend...")
 
-    // CORS
     r.Use(cors.New(cors.Config{
         AllowOrigins: []string{
             "https://bznikin-play.vercel.app",
@@ -118,12 +113,10 @@ func main() {
         AllowCredentials: true,
     }))
 
-    // Health check
     r.GET("/health", func(c *gin.Context) {
         c.JSON(200, gin.H{"status": "ok", "timestamp": time.Now().Unix()})
     })
 
-    // ========== КАТАЛОГ КОНСОЛЕЙ ==========
     r.GET("/api/consoles", func(c *gin.Context) {
         c.JSON(200, []gin.H{
             {"id": 1, "type": "PS5", "model": "PlayStation 5 Standard", "price_per_day": 800, "is_available": true, "description": "Полная комплектация", "image_url": "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig"},
@@ -135,7 +128,6 @@ func main() {
         })
     })
 
-    // ========== РЕГИСТРАЦИЯ ==========
     r.POST("/api/register", func(c *gin.Context) {
         var req struct {
             Username string `json:"username"`
@@ -148,7 +140,6 @@ func main() {
             return
         }
 
-        // Проверка на пустые поля
         if req.Username == "" {
             c.JSON(400, gin.H{"error": "❌ Ошибка: имя пользователя не может быть пустым"})
             return
@@ -169,7 +160,6 @@ func main() {
             return
         }
 
-        // Проверяем, существует ли пользователь
         for _, u := range users {
             if u.Email == req.Email {
                 c.JSON(400, gin.H{"error": "❌ Ошибка: пользователь с таким email уже существует"})
@@ -177,14 +167,12 @@ func main() {
             }
         }
 
-        // Хешируем пароль
         hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
         if err != nil {
             c.JSON(500, gin.H{"error": "❌ Ошибка сервера: не удалось зашифровать пароль"})
             return
         }
 
-        // Создаём пользователя
         user := User{
             ID:       nextUserID,
             Username: req.Username,
@@ -194,7 +182,6 @@ func main() {
         users = append(users, user)
         nextUserID++
 
-        // Генерируем токен
         token, _ := generateToken(user.ID, user.Username, user.Email)
 
         c.JSON(201, gin.H{
@@ -208,7 +195,6 @@ func main() {
         })
     })
 
-    // ========== ВХОД ==========
     r.POST("/api/login", func(c *gin.Context) {
         var req struct {
             Email    string `json:"email"`
@@ -220,7 +206,6 @@ func main() {
             return
         }
 
-        // Проверка на пустые поля
         if req.Email == "" {
             c.JSON(400, gin.H{"error": "❌ Ошибка: введите email"})
             return
@@ -231,7 +216,6 @@ func main() {
             return
         }
 
-        // Ищем пользователя
         var foundUser *User
         for i, u := range users {
             if u.Email == req.Email {
@@ -245,14 +229,12 @@ func main() {
             return
         }
 
-        // Проверяем пароль
         err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.Password))
         if err != nil {
             c.JSON(401, gin.H{"error": "❌ Ошибка: неверный пароль"})
             return
         }
 
-        // Генерируем токен
         token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
 
         c.JSON(200, gin.H{
@@ -266,7 +248,6 @@ func main() {
         })
     })
 
-    // ========== ПРОФИЛЬ (GET) ==========
     r.GET("/api/user/profile", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
@@ -291,7 +272,6 @@ func main() {
         })
     })
 
-    // ========== ПРОФИЛЬ (UPDATE) ==========
     r.PUT("/api/user/profile", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
@@ -307,7 +287,6 @@ func main() {
             return
         }
 
-        // Находим пользователя
         var foundUser *User
         var userIndex int
         for i, u := range users {
@@ -323,7 +302,6 @@ func main() {
             return
         }
 
-        // Проверяем текущий пароль
         err := bcrypt.CompareHashAndPassword([]byte(foundUser.Password), []byte(req.CurrentPassword))
         if err != nil {
             c.JSON(401, gin.H{"error": "❌ Ошибка: текущий пароль введён неверно"})
@@ -332,14 +310,12 @@ func main() {
 
         changes := []string{}
 
-        // Обновляем данные
         if req.Username != "" && req.Username != foundUser.Username {
             foundUser.Username = req.Username
             changes = append(changes, "имя пользователя")
         }
         
         if req.Email != "" && req.Email != foundUser.Email {
-            // Проверяем уникальность email
             for i, u := range users {
                 if u.Email == req.Email && i != userIndex {
                     c.JSON(400, gin.H{"error": "❌ Ошибка: этот email уже используется другим пользователем"})
@@ -365,7 +341,6 @@ func main() {
             message += " (изменено: " + strings.Join(changes, ", ") + ")"
         }
 
-        // Генерируем новый токен
         token, _ := generateToken(foundUser.ID, foundUser.Username, foundUser.Email)
 
         c.JSON(200, gin.H{
@@ -379,7 +354,6 @@ func main() {
         })
     })
 
-    // ========== АРЕНДА (CREATE) ==========
     r.POST("/api/rentals", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
@@ -396,7 +370,6 @@ func main() {
             return
         }
 
-        // Проверка обязательных полей
         if req.DeliveryAddress == "" {
             c.JSON(400, gin.H{"error": "❌ Ошибка: укажите адрес доставки"})
             return
@@ -407,14 +380,12 @@ func main() {
             return
         }
 
-        // Цены консолей
         prices := map[int]float64{1: 800, 2: 800, 3: 500, 4: 800, 5: 800, 6: 500}
         price := prices[req.ConsoleID]
         if price == 0 {
             price = 800
         }
 
-        // Маппинг изображений для консолей
         images := map[int]string{
             1: "https://avatars.mds.yandex.net/get-mpic/13230222/2a000001969fb44f0b2b0473bcfe73eb4de4/orig",
             2: "https://avatars.mds.yandex.net/i?id=0b869e3e8145ca09fba9fa1e77702f95_l-4355007-images-thumbs&n=13",
@@ -457,7 +428,6 @@ func main() {
         rentals = append(rentals, rental)
         nextRentalID++
 
-        // Рассчитываем количество дней
         days := 1
         if req.StartDate != "" && req.EndDate != "" {
             start, _ := time.Parse(time.RFC3339, req.StartDate)
@@ -476,14 +446,12 @@ func main() {
         })
     })
 
-    // ========== МОИ АРЕНДЫ ==========
     r.GET("/api/my-rentals", authMiddleware(), func(c *gin.Context) {
         userID := c.GetInt("user_id")
         
         var userRentals []gin.H
         for _, r := range rentals {
             if r["user_id"] == userID {
-                // Добавляем русский текст статуса
                 status := r["status"].(string)
                 statusText := "Активна"
                 if status == "returned" {
@@ -507,7 +475,6 @@ func main() {
         c.JSON(200, userRentals)
     })
 
-    // ========== ВОЗВРАТ КОНСОЛИ ==========
     r.PUT("/api/rentals/:id/return", authMiddleware(), func(c *gin.Context) {
         rentalID, err := strconv.Atoi(c.Param("id"))
         if err != nil {
@@ -517,7 +484,6 @@ func main() {
 
         userID := c.GetInt("user_id")
         
-        // Находим аренду
         var rentalIndex = -1
         for i, r := range rentals {
             if r["id"] == rentalID {
@@ -531,19 +497,16 @@ func main() {
             return
         }
 
-        // Проверяем, что аренда принадлежит пользователю
         if rentals[rentalIndex]["user_id"] != userID {
             c.JSON(403, gin.H{"error": "❌ Ошибка: вы можете вернуть только свою аренду"})
             return
         }
 
-        // Проверяем, что аренда активна
         if rentals[rentalIndex]["status"] != "active" {
             c.JSON(400, gin.H{"error": "❌ Ошибка: эта аренда уже возвращена"})
             return
         }
 
-        // Обновляем статус
         rentals[rentalIndex]["status"] = "returned"
 
         c.JSON(200, gin.H{"message": "✅ Консоль успешно возвращена! Спасибо за аренду!"})

@@ -3,7 +3,6 @@ import App from "./App.vue";
 import router from "./router";
 import axios from "axios";
 
-// Настройка базового URL для API
 const API_URL =
   import.meta.env.VITE_API_URL ||
   "https://bznikinplay-production.up.railway.app";

@@ -185,9 +185,7 @@ export default {
       mobileMenuOpen.value = !mobileMenuOpen.value;
     };
 
-    // Настройка axios с токеном
     const setupAxiosInterceptor = () => {
-      // Добавляем токен к каждому запросу
       axios.interceptors.request.use(
         (config) => {
           const token = localStorage.getItem("auth_token");
@@ -199,12 +197,10 @@ export default {
         (error) => Promise.reject(error),
       );
 
-      // Обработка 401 ошибки
       axios.interceptors.response.use(
         (response) => response,
         (error) => {
           if (error.response && error.response.status === 401) {
-            // Только если не на главной странице
             if (router.currentRoute.value.path !== "/") {
               localStorage.removeItem("auth_token");
               isLoggedIn.value = false;
@@ -243,11 +239,9 @@ export default {
       try {
         const response = await axios.post("/api/login", loginForm.value);
 
-        // Сохраняем токен
         if (response.data.token) {
           saveToken(response.data.token);
         } else {
-          // Если бэкенд не возвращает токен, создаём фейковый
           const fakeToken = btoa(
             JSON.stringify({
               user_id: 1,
@@ -259,7 +253,6 @@ export default {
           saveToken(fakeToken);
         }
 
-        // Обновляем состояние
         currentUser.value = response.data.user || {
           id: 1,
           username: loginForm.value.email.split("@")[0],
@@ -269,7 +262,6 @@ export default {
         showAuthModal.value = false;
         loginForm.value = { email: "", password: "" };
 
-        // Перенаправляем на главную
         router.push("/");
       } catch (error) {
         console.error("Login error:", error);

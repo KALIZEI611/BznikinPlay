@@ -90,7 +90,6 @@ export default {
     let isComponentMounted = true;
 
     const fetchRentals = async () => {
-      // Проверяем наличие токена
       const token = localStorage.getItem("auth_token");
       if (!token) {
         router.push("/");
@@ -106,7 +105,6 @@ export default {
       } catch (error) {
         console.error("Error fetching rentals:", error);
         if (error.response?.status === 401) {
-          // Если не авторизован, перенаправляем на главную
           localStorage.removeItem("auth_token");
           router.push("/");
         }

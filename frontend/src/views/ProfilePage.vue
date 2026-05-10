@@ -168,7 +168,6 @@ export default {
     const activeRentalsCount = ref(0);
     const totalSpent = ref(0);
 
-    // Загрузка данных пользователя
     const fetchUserInfo = async () => {
       const token = localStorage.getItem("auth_token");
       if (!token) {
@@ -192,7 +191,6 @@ export default {
       }
     };
 
-    // Загрузка аренд пользователя
     const fetchUserRentals = async () => {
       try {
         const response = await axios.get("/api/my-rentals");
@@ -220,9 +218,7 @@ export default {
       }
     };
 
-    // Обновление профиля
     const updateProfile = async () => {
-      // Валидация
       if (!editForm.value.current_password) {
         alert("Введите текущий пароль для подтверждения изменений");
         return;

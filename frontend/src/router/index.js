@@ -26,13 +26,11 @@ const router = createRouter({
   routes,
 });
 
-// Защита маршрутов
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem("auth_token");
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
 
   if (requiresAuth && !token) {
-    // Если требуется авторизация, но токена нет - перенаправляем на главную
     next("/");
   } else {
     next();
